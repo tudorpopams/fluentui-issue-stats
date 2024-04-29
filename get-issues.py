@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from alive_progress import alive_bar, alive_it
+from alive_progress import alive_bar
 
 import sys
 import requests
@@ -36,24 +36,6 @@ def fetch_issues(repo, token):
             bar()
 
     print(f"Fetched {len(issues)} issues")
-
-    print("Fetching issue events...")
-
-    i = 0
-    for issue in alive_it(issues):
-        url = f"https://api.github.com/repos/{repo}/issues/{issue['number']}/events?per_page=100"
-        headers = {"Authorization": f"Bearer {token}"}
-
-        response = requests.get(url, headers=headers)
-
-        if response.status_code != 200:
-            continue
-
-        events = response.json()
-        issues[i]["events"] = events
-        i += 1
-
-    print("Fetched issue events")
 
     return issues
 
