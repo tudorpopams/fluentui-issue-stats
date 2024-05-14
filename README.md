@@ -28,12 +28,12 @@ poetry run jupyter notebook
 
 ## Current stats
 
-![Top 10 labels](./fluent-issues_files/fluent-issues_1_0.png)
+![Top 10 labels](./images/stats-01.png)
 
-![Components issues](./fluent-issues_files/fluent-issues_2_0.png)
+![Components issues](./images/stats-02.png)
 
-![Issues opened in the past 12 months](./fluent-issues_files/fluent-issues_3_0.png)
+![Issues opened in the past 12 months](./images/stats-03.png)
 
-![Number of issues that required backlog grooming](./fluent-issues_files/fluent-issues_4_0.png)
+![Number of issues that required backlog grooming](./images/stats-04.png)
 
-![Number of closed epics per month](./fluent-issues_files/fluent-issues_5_0.png)
+![Number of closed epics per month](./images/stats-05.png)
