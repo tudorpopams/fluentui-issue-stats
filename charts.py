@@ -28,8 +28,7 @@ def fetch_issues(repo, token):
 
     with alive_bar(0, title="Fetching issues", unit=" pages") as bar:
         while True:
-            url = f"https://api.github.com/repos/{repo}/issues?state=all&page={
-                page}&per_page=100&labels=Fluent UI react-components (v9)"
+            url = f"https://api.github.com/repos/{repo}/issues?state=all&page={page}&per_page=100&labels=Fluent UI react-components (v9)"
             headers = {"Authorization": f"Bearer {token}"}
 
             response = requests.get(url, headers=headers)
@@ -301,7 +300,7 @@ def _generate_and_save_plots(issues):
         issues)
 
     with alive_bar(5, title="Generating and saving charts", unit=" charts") as bar:
-        plt = plot_labels_pie(issues_minimal)
+        plt = plot_labels_pie(issue_labels)
         plt.savefig("images/stats-01.png")
 
         bar()
