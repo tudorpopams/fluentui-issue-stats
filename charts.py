@@ -19,7 +19,7 @@ label_epic = "Type: Epic"
 label_needs_backlog_grooming = "Needs: Backlog review"
 # label_soft_close = "Resolution: Soft Close"
 # label_parter_ask = "Partner Ask"
-# label_needs_triage = "Needs: Triage :mag:"
+label_needs_triage = "Needs: Triage :mag:"
 
 
 def fetch_issues(repo, token):
@@ -295,11 +295,82 @@ def plot_closed_epics_line(df_issues_closed, label_v9, label_epic):
     return plt
 
 
+def plot_triage_issues_line(df_issues):
+    created_issues = df_issues.sort_values(by="created_at", ascending=False)
+    created_issues["created_at"] = pd.to_datetime(created_issues["created_at"] - pd.to_timedelta(1, unit="w"))
+
+    triage_df = df_issues[
+        df_issues["labels"].apply(lambda x: label_needs_triage in x)
+    ].sort_values(by="created_at", ascending=False)
+
+    triage_df["created_at"] = pd.to_datetime(triage_df["created_at"] - pd.to_timedelta(1, unit="w"))
+
+    data_created = (
+        created_issues.groupby(
+            [
+                created_issues["created_at"].dt.year,
+                created_issues["created_at"].dt.month_name(),
+                pd.Grouper(key="created_at", freq="W-MON"),
+            ],
+        )["labels"]
+        .count()
+        .sort_index(ascending=False)
+        .head(12)
+    )
+
+    data = (
+        triage_df.groupby(
+            [
+                triage_df["created_at"].dt.year,
+                triage_df["created_at"].dt.month_name(),
+                pd.Grouper(key="created_at", freq="W-MON"),
+            ],
+        )["labels"]
+        .count()
+        .sort_index(ascending=False)
+    )
+
+    created_values = list(data_created.values)
+    created_labels = [k[2].strftime("%Y-%m-%d") for k in list(data_created.index)]
+
+    values = list(data.values)
+    labels = [k[2].strftime("%Y-%m-%d") for k in list(data.index)]
+
+    _, ax = plt.subplots(figsize=(26, 9))
+    ax.set_title("Issues were created and issues that need triage")
+    ax.invert_xaxis()
+
+    for i, txt in enumerate(values):
+        ax.annotate(
+            txt,
+            (labels[i], values[i]),
+            textcoords="offset points",
+            xytext=(0, 7),
+            ha="center",
+        )
+
+    for i, txt in enumerate(created_values):
+        ax.annotate(
+            txt,
+            (created_labels[i], created_values[i]),
+            textcoords="offset points",
+            xytext=(0, 7),
+            ha="center",
+        )
+
+    plt.plot(labels, values, label="Issues needing triage", linestyle="-", marker="o")
+    plt.plot(created_labels, created_values, label="Created issues", linestyle="--", marker="o")
+
+    plt.xticks(rotation=45)
+    plt.legend()
+
+    return plt
+
 def _generate_and_save_plots(issues):
     _, issues_minimal, df_issues, df_issues_closed, issue_labels = get_charts_data(
         issues)
 
-    with alive_bar(5, title="Generating and saving charts", unit=" charts") as bar:
+    with alive_bar(6, title="Generating and saving charts", unit=" charts") as bar:
         plt = plot_labels_pie(issue_labels)
         plt.savefig("images/stats-01.png")
 
@@ -323,6 +394,10 @@ def _generate_and_save_plots(issues):
         plt = plot_closed_epics_line(df_issues_closed, label_v9, label_epic)
         plt.savefig("images/stats-05.png")
 
+        bar()
+
+        plt = plot_triage_issues_line(df_issues)
+        plt.savefig("images/stats-06.png")
         bar()
 
 

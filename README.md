@@ -37,3 +37,5 @@ poetry run jupyter notebook
 ![Number of issues that required backlog grooming](./images/stats-04.png)
 
 ![Number of closed epics per month](./images/stats-05.png)
+
+![Number of issues that need triage in the past 3 months](./images/stats-06.png)
