@@ -1,3 +1,5 @@
+name: Update charts on a weekly basis
+
 on:
   workflow_dispatch:
   schedule:
