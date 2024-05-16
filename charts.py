@@ -28,7 +28,8 @@ def fetch_issues(repo, token):
 
     with alive_bar(0, title="Fetching issues", unit=" pages") as bar:
         while True:
-            url = f"https://api.github.com/repos/{repo}/issues?state=all&page={page}&per_page=100&labels=Fluent UI react-components (v9)"
+            url = f"https://api.github.com/repos/{repo}/issues?state=all&page={
+                page}&per_page=100&labels=Fluent UI react-components (v9)"
             headers = {"Authorization": f"Bearer {token}"}
 
             response = requests.get(url, headers=headers)
@@ -297,13 +298,15 @@ def plot_closed_epics_line(df_issues_closed, label_v9, label_epic):
 
 def plot_triage_issues_line(df_issues):
     created_issues = df_issues.sort_values(by="created_at", ascending=False)
-    created_issues["created_at"] = pd.to_datetime(created_issues["created_at"] - pd.to_timedelta(1, unit="w"))
+    created_issues["created_at"] = pd.to_datetime(
+        created_issues["created_at"] - pd.to_timedelta(1, unit="w"))
 
     triage_df = df_issues[
         df_issues["labels"].apply(lambda x: label_needs_triage in x)
     ].sort_values(by="created_at", ascending=False)
 
-    triage_df["created_at"] = pd.to_datetime(triage_df["created_at"] - pd.to_timedelta(1, unit="w"))
+    triage_df["created_at"] = pd.to_datetime(
+        triage_df["created_at"] - pd.to_timedelta(1, unit="w"))
 
     data_created = (
         created_issues.groupby(
@@ -331,7 +334,8 @@ def plot_triage_issues_line(df_issues):
     )
 
     created_values = list(data_created.values)
-    created_labels = [k[2].strftime("%Y-%m-%d") for k in list(data_created.index)]
+    created_labels = [k[2].strftime("%Y-%m-%d")
+                      for k in list(data_created.index)]
 
     values = list(data.values)
     labels = [k[2].strftime("%Y-%m-%d") for k in list(data.index)]
@@ -358,13 +362,16 @@ def plot_triage_issues_line(df_issues):
             ha="center",
         )
 
-    plt.plot(labels, values, label="Issues needing triage", linestyle="-", marker="o")
-    plt.plot(created_labels, created_values, label="Created issues", linestyle="--", marker="o")
+    plt.plot(labels, values, label="Issues needing triage",
+             linestyle="-", marker="o")
+    plt.plot(created_labels, created_values,
+             label="Created issues", linestyle="--", marker="o")
 
     plt.xticks(rotation=45)
     plt.legend()
 
     return plt
+
 
 def _generate_and_save_plots(issues):
     _, issues_minimal, df_issues, df_issues_closed, issue_labels = get_charts_data(
@@ -381,7 +388,8 @@ def _generate_and_save_plots(issues):
 
         bar()
 
-        plt = plot_issues_in_the_past_12_months_line(df_issues, df_issues_closed)
+        plt = plot_issues_in_the_past_12_months_line(
+            df_issues, df_issues_closed)
         plt.savefig("images/stats-03.png")
 
         bar()
