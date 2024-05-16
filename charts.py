@@ -379,32 +379,38 @@ def _generate_and_save_plots(issues):
 
     with alive_bar(6, title="Generating and saving charts", unit=" charts") as bar:
         plt = plot_labels_pie(issue_labels)
+        plt.tight_layout()
         plt.savefig("images/stats-01.png")
 
         bar()
 
         plt = plot_components_issue_bar(issue_labels)
+        plt.tight_layout()
         plt.savefig("images/stats-02.png")
 
         bar()
 
         plt = plot_issues_in_the_past_12_months_line(
             df_issues, df_issues_closed)
+        plt.tight_layout()
         plt.savefig("images/stats-03.png")
 
         bar()
 
         plt = plot_backlog_grooming_line(df_issues, df_issues_closed)
+        plt.tight_layout()
         plt.savefig("images/stats-04.png")
 
         bar()
 
         plt = plot_closed_epics_line(df_issues_closed, label_v9, label_epic)
+        plt.tight_layout()
         plt.savefig("images/stats-05.png")
 
         bar()
 
         plt = plot_triage_issues_line(df_issues)
+        plt.tight_layout()
         plt.savefig("images/stats-06.png")
         bar()
 
