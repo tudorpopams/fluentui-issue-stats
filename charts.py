@@ -92,7 +92,14 @@ def get_charts_data(issues):
         issue["labels"] for issue in issues_minimal if issue["state"] == "open"
     ]
 
-    return all_issues, issues_minimal, df_issues, df_issues_closed, issue_labels
+    all_labels = set()
+
+    for labels in issue_labels:
+        all_labels = all_labels.union(labels)
+
+    component_names = set([label.replace("Component: ", "") for label in all_labels if label.startswith("Component:")])
+
+    return all_issues, issues_minimal, df_issues, df_issues_closed, issue_labels, component_names
 
 
 def plot_labels_pie(issue_labels):
@@ -374,7 +381,7 @@ def plot_triage_issues_line(df_issues):
 
 
 def _generate_and_save_plots(issues):
-    _, issues_minimal, df_issues, df_issues_closed, issue_labels = get_charts_data(
+    _, issues_minimal, df_issues, df_issues_closed, issue_labels, component_names = get_charts_data(
         issues)
 
     with alive_bar(6, title="Generating and saving charts", unit=" charts") as bar:

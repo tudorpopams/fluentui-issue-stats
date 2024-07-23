@@ -28,6 +28,8 @@ poetry run jupyter notebook
 
 ## Current stats
 
+For individual component charts, check the [Components doc](./docs/components.md).
+
 ![Top 10 labels](./images/stats-01.png)
 
 ![Components issues](./images/stats-02.png)
