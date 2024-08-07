@@ -1,5 +1,6 @@
 import pandas as pd
 
+SPREADSHEET_PATH = "spreadsheets"
 
 def overall_issue_stats(df_issues, label_bug, label_feature, label_epic):
     bugs = df_issues[
@@ -22,7 +23,8 @@ def overall_issue_stats(df_issues, label_bug, label_feature, label_epic):
         data, columns=["Type", f"Count (Total: {total_issues})"]
     )
 
-    issue_stats_df.to_excel("xsls/overall_issue_stats.xlsx", index=False)
+    issue_stats_df.to_excel(f"{SPREADSHEET_PATH}/overall_issue_stats.xlsx", index=False)
+    issue_stats_df.to_csv(f"{SPREADSHEET_PATH}/overall_issue_stats.csv", index=False)
 
 
 def monthly_stats(df_issues, df_issues_closed):
@@ -63,7 +65,8 @@ def monthly_stats(df_issues, df_issues_closed):
     monthly_stats["Month"] = dates
     monthly_stats.sort_index(ascending=False, inplace=True)
 
-    monthly_stats.to_excel("xsls/monthly_stats.xlsx", index=False)
+    monthly_stats.to_excel(f"{SPREADSHEET_PATH}/monthly_stats.xlsx", index=False)
+    monthly_stats.to_csv(f"{SPREADSHEET_PATH}/monthly_stats.csv", index=False)
 
 
 def component_stats(component_names, df_issues, label_bug, label_feature, label_epic):
@@ -93,4 +96,5 @@ def component_stats(component_names, df_issues, label_bug, label_feature, label_
 
     component_stats.sort_values(by="Total", ascending=False, inplace=True)
 
-    component_stats.to_excel("xsls/component_stats.xlsx", index=False)
+    component_stats.to_excel(f"{SPREADSHEET_PATH}/component_stats.xlsx", index=False)
+    component_stats.to_csv(f"{SPREADSHEET_PATH}/component_stats.csv", index=False)
