@@ -11,14 +11,19 @@ from alive_progress import alive_bar
 
 from collections import Counter
 
+from spreadsheets import component_stats, monthly_stats, overall_issue_stats
+
 load_dotenv()
 
 
 label_v9 = "Fluent UI react-components (v9)"
 label_epic = "Type: Epic"
+label_feature = "Type: Feature"
+label_bug = "Type: Bug :bug:"
 label_needs_backlog_grooming = "Needs: Backlog review"
-# label_soft_close = "Resolution: Soft Close"
-# label_parter_ask = "Partner Ask"
+label_a11y = "Area: Accessibility"
+label_soft_close = "Resolution: Soft Close"
+label_parter_ask = "Partner Ask"
 label_needs_triage = "Needs: Triage :mag:"
 
 
@@ -176,11 +181,19 @@ def plot_components_issue_bar(issue_labels):
     return plt
 
 
-def plot_issues_in_the_past_12_months_line(df_issues, df_issues_closed):
+def plot_issues_in_the_past_12_months_line(df_issues, df_issues_closed, label=None):
+    data_source = df_issues if label is None else df_issues[
+        df_issues["labels"].apply(lambda x: label in x)
+    ]
+
+    data_source_closed = df_issues_closed if label is None else df_issues_closed[
+        df_issues_closed["labels"].apply(lambda x: label in x)
+    ]
+
     data = (
-        df_issues.groupby(
-            [df_issues["created_at"].dt.year,
-                df_issues["created_at"].dt.month_name()],
+        data_source.groupby(
+            [data_source["created_at"].dt.year,
+                data_source["created_at"].dt.month_name()],
             sort=False,
         )["labels"]
         .count()
@@ -188,10 +201,10 @@ def plot_issues_in_the_past_12_months_line(df_issues, df_issues_closed):
     )
 
     data_closed = (
-        df_issues_closed.groupby(
+        data_source_closed.groupby(
             [
-                df_issues_closed["created_at"].dt.year,
-                df_issues_closed["created_at"].dt.month_name(),
+                data_source_closed["created_at"].dt.year,
+                data_source_closed["created_at"].dt.month_name(),
             ],
             sort=False,
         )["labels"]
@@ -274,9 +287,14 @@ def plot_backlog_grooming_line(df_issues, df_issues_closed):
     return plt
 
 
-def plot_closed_epics_line(df_issues_closed, label_v9, label_epic):
+def plot_closed_epics_line(df_issues, df_issues_closed, label_v9, label_epic):
     released_components_df = df_issues_closed[
         df_issues_closed["labels"].apply(
+            lambda x: label_v9 in x and label_epic in x)
+    ].sort_values(by="created_at", ascending=False)
+
+    open_components_df = df_issues[
+        df_issues["labels"].apply(
             lambda x: label_v9 in x and label_epic in x)
     ].sort_values(by="created_at", ascending=False)
 
@@ -291,14 +309,31 @@ def plot_closed_epics_line(df_issues_closed, label_v9, label_epic):
         .count()
         .head(12)
     )
+
+    data_open = (
+        open_components_df.groupby(
+            [
+                open_components_df["created_at"].dt.year,
+                open_components_df["created_at"].dt.month_name(),
+            ],
+            sort=False,
+        )["labels"]
+        .count()
+        .head(12)
+    )
+
     values = list(data.values)
     labels = [f"{k[0]} {k[1]}" for k in list(data.index)]
+
+    open_values = list(data_open.values)
+    open_labels = [f"{k[0]} {k[1]}" for k in list(data_open.index)]
 
     _, ax = plt.subplots(figsize=(26, 9))
     ax.set_title("Closed epics (components / large items)")
     ax.invert_xaxis()
 
     plt.plot(labels, values, linestyle="-", marker="o")
+    plt.plot(open_labels, open_values, linestyle="--", marker="o")
 
     return plt
 
@@ -384,7 +419,7 @@ def _generate_and_save_plots(issues):
     _, issues_minimal, df_issues, df_issues_closed, issue_labels, component_names = get_charts_data(
         issues)
 
-    with alive_bar(6, title="Generating and saving charts", unit=" charts") as bar:
+    with alive_bar(7, title="Generating and saving charts", unit=" charts") as bar:
         plt = plot_labels_pie(issue_labels)
         plt.tight_layout()
         plt.savefig("images/stats-01.png")
@@ -410,7 +445,7 @@ def _generate_and_save_plots(issues):
 
         bar()
 
-        plt = plot_closed_epics_line(df_issues_closed, label_v9, label_epic)
+        plt = plot_closed_epics_line(df_issues, df_issues_closed, label_v9, label_epic)
         plt.tight_layout()
         plt.savefig("images/stats-05.png")
 
@@ -421,6 +456,26 @@ def _generate_and_save_plots(issues):
         plt.savefig("images/stats-06.png")
         bar()
 
+        plt = plot_issues_in_the_past_12_months_line(
+            df_issues, df_issues_closed, label_a11y)
+        plt.tight_layout()
+        plt.savefig("images/stats-07.png")
+
+        bar()
+
+def _generate_and_save_sheets(issues):
+    _, _issues_minimal, df_issues, df_issues_closed, _issue_labels, component_names = get_charts_data(
+        issues)
+
+    with alive_bar(3, title="Generating and saving spreadsheets", unit=" sheets") as bar:
+        overall_issue_stats(df_issues, label_bug, label_feature, label_epic)
+        bar()
+
+        monthly_stats(df_issues, df_issues_closed)
+        bar()
+
+        component_stats(component_names, df_issues, label_bug, label_feature, label_epic)
+        bar()
 
 def main():
     repo = "microsoft/fluentui"
@@ -434,6 +489,7 @@ def main():
         json.dump(issues, f)
 
     _generate_and_save_plots(issues)
+    _generate_and_save_sheets(issues)
 
 
 if __name__ == "__main__":
