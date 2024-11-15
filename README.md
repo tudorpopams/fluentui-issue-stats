@@ -28,4 +28,6 @@ poetry run jupyter notebook
 
 ## Weekly updated charts
 
-You can find all charts in the [Charts document](./docs/charts.md)
+You can find all charts in the [Charts document](./docs/charts.md).
+
+All data sources are exported in `csv` and `xlsx` formats in the [spreadsheets](./spreadsheets/) folder.
