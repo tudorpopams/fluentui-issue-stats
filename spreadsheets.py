@@ -1,8 +1,28 @@
 import pandas as pd
 
+from issues import (
+    label_v9,
+    label_epic,
+    label_needs_backlog_grooming,
+    label_needs_triage,
+    label_a11y,
+    label_bug,
+    label_feature,
+)
+
+from datetime import datetime, timedelta
+
 SPREADSHEET_PATH = "spreadsheets"
 
-def overall_issue_stats(df_issues, label_bug, label_feature, label_epic):
+
+def overall_issue_stats(issues):
+    # Convert issues to DataFrame
+    df_issues = pd.DataFrame(issues)
+    df_issues["createdAt"] = pd.to_datetime(df_issues["createdAt"], yearfirst=True)
+    # Filter open issues
+    df_issues = df_issues[df_issues["state"] == "OPEN"]
+
+    # Identify Bugs, Features, and Epics
     bugs = df_issues[
         df_issues["labels"].apply(
             lambda x: label_bug in x or not (label_feature in x or label_epic in x)
@@ -27,38 +47,39 @@ def overall_issue_stats(df_issues, label_bug, label_feature, label_epic):
     issue_stats_df.to_csv(f"{SPREADSHEET_PATH}/overall_issue_stats.csv", index=False)
 
 
-def monthly_stats(df_issues, df_issues_closed):
-    data = (
+def monthly_stats(issues):
+    # Convert issues to DataFrame
+    df_issues = pd.DataFrame(issues)
+    df_issues["createdAt"] = pd.to_datetime(df_issues["createdAt"], yearfirst=True)
+    df_issues["closedAt"] = pd.to_datetime(df_issues["closedAt"], yearfirst=True)
+
+    # Group by year and month for opened issues
+    data_opened = (
         df_issues.groupby(
-            [
-                df_issues["created_at"].dt.year,
-                df_issues["created_at"].dt.month_name(),
-            ],
-            sort=False,
-        )["labels"]
+            [df_issues["createdAt"].dt.year, df_issues["createdAt"].dt.month_name()]
+        )["number"]
         .count()
-        .head(12)
+        .reset_index(name="Opened Issues")
     )
 
+    # Group by year and month for closed issues
     data_closed = (
-        df_issues_closed.groupby(
-            [
-                df_issues_closed["created_at"].dt.year,
-                df_issues_closed["created_at"].dt.month_name(),
-            ],
-            sort=False,
-        )["labels"]
+        df_issues.dropna(subset=["closedAt"])
+        .groupby(
+            [df_issues["closedAt"].dt.year, df_issues["closedAt"].dt.month_name()]
+        )["number"]
         .count()
-        .head(12)
+        .reset_index(name="Closed Issues")
     )
 
-    monthly_stats = pd.DataFrame(columns=["Month", "Closed Issues", "Opened Issues"])
-    monthly_stats["Closed Issues"] = data_closed.values
-    monthly_stats["Opened Issues"] = data.values
+    # Merge opened and closed data
+    monthly_stats = pd.merge(
+        data_opened, data_closed, on=["createdAt", "closedAt"], how="outer"
+    ).fillna(0)
 
     dates = []
 
-    for index in data.index:
+    for index in data_opened.index:
         formatted_index = f"{index[0]} {index[1]}"
         dates.append(formatted_index)
 
@@ -69,22 +90,35 @@ def monthly_stats(df_issues, df_issues_closed):
     monthly_stats.to_csv(f"{SPREADSHEET_PATH}/monthly_stats.csv", index=False)
 
 
-def component_stats(component_names, df_issues, label_bug, label_feature, label_epic):
+def component_stats(issues):
+    # Convert issues to DataFrame
+    df_issues = pd.DataFrame(issues)
+    df_issues["createdAt"] = pd.to_datetime(df_issues["createdAt"], yearfirst=True)
+    # Filter open issues
+    df_issues = df_issues[df_issues["state"] == "OPEN"]
+
+    # Extract component names
+    component_names = set()
+    for labels in df_issues["labels"]:
+        for label in labels:
+            if label.startswith("Component:"):
+                component_names.add(label.replace("Component: ", ""))
+
     component_data = []
 
     for component_name in component_names:
         component_label = f"Component: {component_name}"
-        component_df = df_issues[
-            df_issues["labels"].map(lambda labels: component_label in labels)
+        component_issues = df_issues[
+            df_issues["labels"].apply(lambda labels: component_label in labels)
         ]
 
-        bugs = component_df[
-            component_df["labels"].map(
+        bugs = component_issues[
+            component_issues["labels"].apply(
                 lambda x: label_bug in x or not (label_feature in x or label_epic in x)
             )
         ]
-        features = component_df[
-            component_df["labels"].map(lambda x: label_feature in x)
+        features = component_issues[
+            component_issues["labels"].apply(lambda x: label_feature in x)
         ]
         total = len(bugs) + len(features)
 

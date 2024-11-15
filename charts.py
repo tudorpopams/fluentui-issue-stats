@@ -1,117 +1,96 @@
-import json
-import os
+from numpy import tri
 import pandas as pd
 import matplotlib.pyplot as plt
-import sys
-import requests
 
 from pathlib import Path
-from dotenv import load_dotenv
 from alive_progress import alive_bar
 
 from collections import Counter
 
-from spreadsheets import component_stats, monthly_stats, overall_issue_stats
-
-load_dotenv()
-
-
-label_v9 = "Fluent UI react-components (v9)"
-label_epic = "Type: Epic"
-label_feature = "Type: Feature"
-label_bug = "Type: Bug :bug:"
-label_needs_backlog_grooming = "Needs: Backlog review"
-label_a11y = "Area: Accessibility"
-label_soft_close = "Resolution: Soft Close"
-label_parter_ask = "Partner Ask"
-label_needs_triage = "Needs: Triage :mag:"
+from issues import (
+    normalize_issues,
+    get_issues,
+    label_v9,
+    label_epic,
+    label_needs_backlog_grooming,
+    label_needs_triage,
+    label_bug,
+    label_feature,
+)
 
 
-def fetch_issues(repo, token):
-    issues = []
-    page = 1
-
-    with alive_bar(0, title="Fetching issues", unit=" pages") as bar:
-        while True:
-            url = f"https://api.github.com/repos/{repo}/issues?state=all&page={
-                page}&per_page=100&labels=Fluent UI react-components (v9)"
-            headers = {"Authorization": f"Bearer {token}"}
-
-            response = requests.get(url, headers=headers)
-
-            if response.status_code != 200:
-                raise Exception(f"Error fetching issues: {
-                                response.status_code}")
-
-            page_issues = response.json()
-
-            if not page_issues:
-                break
-
-            issues.extend(page_issues)
-            page += 1
-            bar()
-
-    return issues
+def save_dataframe(df, filename_base):
+    """
+    Save the given DataFrame to CSV and Excel files.
+    """
+    df.to_csv(f"spreadsheets/{filename_base}.csv", index=False)
+    df.to_excel(f"spreadsheets/{filename_base}.xlsx", index=False)
 
 
-def get_charts_data(issues):
-    all_issues = [
-        issue for issue in issues if "pull_request" not in issue
-    ]
+def prepare_and_save_dataframe(data, columns, filename_base):
+    """
+    Create a DataFrame from data and columns, then save it.
+    """
+    df = pd.DataFrame(data, columns=columns)
+    save_dataframe(df, filename_base)
+    return df
 
-    issues_minimal = []
 
-    for issue in all_issues:
-        labels_set = set([label["name"] for label in issue["labels"]])
+def initialize_plot(figsize, title, invert_xaxis=False):
+    """
+    Initialize a matplotlib plot with the given size and title.
+    Optionally invert the x-axis.
+    """
+    _, ax = plt.subplots(figsize=figsize)
+    ax.set_title(title)
+    if invert_xaxis:
+        ax.invert_xaxis()
+    return ax
 
-        issues_minimal.append(
-            {
-                "id": issue["id"],
-                "title": issue["title"],
-                "labels": labels_set,
-                "created_at": issue["created_at"],
-                "state": issue["state"].lower(),
-            }
+
+def annotate_bars(ax, bars):
+    """
+    Annotate bars in a bar chart with their respective values.
+    """
+    for bar in bars:
+        width = bar.get_width()
+        if width > 0:
+            ax.text(
+                bar.get_x() + width / 2,
+                bar.get_y() + bar.get_height() / 2,
+                f"{int(width)}",
+                ha="center",
+                va="center",
+                color="black",
+            )
+
+
+def annotate_line(ax, x_data, y_data, offset=(0, 7)):
+    """
+    Annotate points in a line chart with their respective values.
+    """
+    for i, txt in enumerate(y_data):
+        ax.annotate(
+            txt,
+            (x_data[i], y_data[i]),
+            textcoords="offset points",
+            xytext=offset,
+            ha="center",
         )
 
-    df_issues_all = pd.DataFrame(issues_minimal)
-    df_issues_all["created_at"] = pd.to_datetime(
-        df_issues_all["created_at"], yearfirst=True
-    )
 
-    df_issues = pd.DataFrame(
-        [issue for issue in issues_minimal if issue["state"] == "open"]
-    )
-    df_issues["created_at"] = pd.to_datetime(
-        df_issues["created_at"], yearfirst=True)
-
-    df_issues_closed = pd.DataFrame(
-        [issue for issue in issues_minimal if issue["state"] == "closed"]
-    )
-    df_issues_closed["created_at"] = pd.to_datetime(
-        df_issues_closed["created_at"], yearfirst=True
-    )
-
-    issue_labels = [
-        issue["labels"] for issue in issues_minimal if issue["state"] == "open"
-    ]
-
-    all_labels = set()
-
-    for labels in issue_labels:
-        all_labels = all_labels.union(labels)
-
-    component_names = set([label.replace("Component: ", "") for label in all_labels if label.startswith("Component:")])
-
-    return all_issues, issues_minimal, df_issues, df_issues_closed, issue_labels, component_names
-
-
-def plot_labels_pie(issue_labels):
+# TODO: use all issues, not just the ones from the past year?
+def plot_labels_pie(issues):
     labels_counter = Counter()
     no_go_labels = set([label_v9])
+    open_issues = [issue for issue in issues if issue["state"] == "OPEN"]
 
-    for labels in issue_labels:
+    for issue in open_issues:
+        if issue["state"] == "closed":
+            continue
+
+        labels = issue["labels"]
+
         for label in labels:
             if label in no_go_labels:
                 continue
@@ -121,16 +100,18 @@ def plot_labels_pie(issue_labels):
     most_common_nr = 10
 
     labels = [
-        f"{label} - {v}"
-        for (label, v) in labels_counter.most_common(most_common_nr)
+        f"{label} - {v}" for (label, v) in labels_counter.most_common(most_common_nr)
     ]
-    values = [value for (_, value)
-              in labels_counter.most_common(most_common_nr)]
+    values = [value for (_, value) in labels_counter.most_common(most_common_nr)]
+
+    # Prepare DataFrame with label counts and save
+    data = labels_counter.most_common(most_common_nr)
+
+    prepare_and_save_dataframe(data, ["Label", "Count"], "stats-01")
 
     _, ax = plt.subplots(figsize=(16, 16))
     ax.set_title(
-        f"Top {most_common_nr} labels out of {
-            len(issue_labels)} open v9 issues in microsoft/fluentui"
+        f"Top {most_common_nr} labels out of {len(open_issues)} open v9 issues in microsoft/fluentui"
     )
 
     plt.pie(values, labels=labels, autopct="%1.0f%%")
@@ -138,62 +119,112 @@ def plot_labels_pie(issue_labels):
     return plt
 
 
-def plot_components_issue_bar(issue_labels):
-    labels_counter = Counter()
+def plot_components_issue_bar(issues):
+    component_stats = {}
 
-    for labels in issue_labels:
-        for label in labels:
-            labels_counter.update([label])
+    for issue in issues:
+        is_component = False
+        component_name = ""
 
-    components_counters = {
-        k: v for k, v in labels_counter.items() if k.startswith("Component:")
-    }
-    sorted_components_counters = dict(
-        sorted(components_counters.items(), key=lambda item: item[0])
-    )
-    labels = [
-        key.replace("Component: ", "")
-        for key in list(sorted_components_counters.keys())
+        for label in issue["labels"]:
+            if not label.startswith("Component: "):
+                continue
+
+            component_name = label.replace("Component: ", "")
+
+            if component_name not in component_stats:
+                component_stats[component_name] = Counter()
+
+            is_component = True
+
+        if is_component:
+            if label_bug in issue["labels"]:
+                component_stats[component_name].update(["Bugs"])
+
+            if label_feature in issue["labels"]:
+                component_stats[component_name].update(["Features"])
+
+    for component, stats in component_stats.copy().items():
+        if "Bugs" not in stats:
+            stats["Bugs"] = 0
+
+        if "Features" not in stats:
+            stats["Features"] = 0
+
+        if stats["Bugs"] == 0 and stats["Features"] == 0:
+            del component_stats[component]
+
+    ax = initialize_plot(figsize=(16, 20), title="v9 Component issues")
+
+    categories = list(component_stats.keys())
+    bugs = [component_stats[category]["Bugs"] for category in categories]
+    features = [component_stats[category]["Features"] for category in categories]
+    totals = [bugs[i] + features[i] for i in range(len(categories))]
+
+    sorted_indices = sorted(range(len(categories)), key=lambda i: totals[i])
+
+    categories_sorted = [categories[i] for i in sorted_indices]
+    bugs_sorted = [bugs[i] for i in sorted_indices]
+    features_sorted = [features[i] for i in sorted_indices]
+    totals_sorted = [totals[i] for i in sorted_indices]
+    categories_with_totals_sorted = [
+        f"{categories_sorted[i]} ({totals_sorted[i]})"
+        for i in range(len(categories_sorted))
     ]
-    values = list(sorted_components_counters.values())
 
-    _, ax = plt.subplots(figsize=(16, 20))
+    # Prepare DataFrame with component stats and save
+    data = {
+        "Component": categories_sorted,
+        "Bugs": bugs_sorted,
+        "Features": features_sorted,
+        "Total": totals_sorted,
+    }
+    df_components = pd.DataFrame(data)
+    save_dataframe(df_components, "stats-02")
 
-    ax.barh(labels, values)
+    bars_features = ax.barh(
+        categories_with_totals_sorted,
+        features_sorted,
+        color="#99ff99",
+        label="Features",
+    )  # Light green
 
-    # Show top values
-    ax.invert_yaxis()
+    bars_bugs = ax.barh(
+        categories_with_totals_sorted,
+        bugs_sorted,
+        left=features_sorted,
+        color="#ff9999",
+        label="Bugs",
+    )  # Lighter red
 
-    # Add annotation to bars
-    for i in ax.patches:
-        plt.text(
-            i.get_width() + 0.2,
-            i.get_y() + 0.5,
-            str(round((i.get_width()), 2)),
-            fontsize=10,
-            fontweight="bold",
-            color="grey",
-        )
+    annotate_bars(ax, bars_features)
+    annotate_bars(ax, bars_bugs)
 
-    # Add Plot Title
-    ax.set_title("v9 Component issues")
+    ax.set_xlabel("Count")
+    ax.legend()
 
     return plt
 
 
-def plot_issues_in_the_past_12_months_line(df_issues, df_issues_closed, label=None):
-    data_source = df_issues if label is None else df_issues[
-        df_issues["labels"].apply(lambda x: label in x)
-    ]
+def plot_issues_in_the_past_12_months_line(issues):
+    open_issues = [issue for issue in issues if issue["state"] == "OPEN"]
+    closed_issues = [issue for issue in issues if issue["state"] == "CLOSED"]
 
-    data_source_closed = df_issues_closed if label is None else df_issues_closed[
-        df_issues_closed["labels"].apply(lambda x: label in x)
-    ]
+    data_source = pd.DataFrame(open_issues)
+    data_source_closed = pd.DataFrame(closed_issues)
+
+    data_source["createdAt"] = pd.to_datetime(data_source["createdAt"], yearfirst=True)
+
+    data_source_closed["closedAt"] = pd.to_datetime(
+        data_source_closed["closedAt"], yearfirst=True
+    )
 
     data = (
         data_source.groupby(
-            [data_source["created_at"].dt.year,
-                data_source["created_at"].dt.month_name()],
+            [
+                data_source["createdAt"].dt.year,
+                data_source["createdAt"].dt.month_name(),
+            ],
             sort=False,
         )["labels"]
         .count()
@@ -203,8 +234,8 @@ def plot_issues_in_the_past_12_months_line(df_issues, df_issues_closed, label=No
     data_closed = (
         data_source_closed.groupby(
             [
-                data_source_closed["created_at"].dt.year,
-                data_source_closed["created_at"].dt.month_name(),
+                data_source_closed["closedAt"].dt.year,
+                data_source_closed["closedAt"].dt.month_name(),
             ],
             sort=False,
         )["labels"]
@@ -218,35 +249,90 @@ def plot_issues_in_the_past_12_months_line(df_issues, df_issues_closed, label=No
     closed_values = list(data_closed.values)
     closed_labels = [f"{k[0]} {k[1]}" for k in list(data_closed.index)]
 
-    _, ax = plt.subplots(figsize=(26, 9))
-    ax.set_title("Issues opened in the past 12 months")
-    ax.invert_xaxis()
+    # Prepare DataFrames for opened and closed issues and save
+    df_opened = pd.DataFrame({"Month": labels, "Opened_Issues": values})
+    df_closed = pd.DataFrame({"Month": closed_labels, "Closed_Issues": closed_values})
+    df_combined = pd.merge(df_opened, df_closed, on="Month", how="outer")
+    save_dataframe(df_combined, "stats-03")
+
+    ax = initialize_plot(
+        figsize=(26, 9),
+        title="Issues states in the past 12 months",
+        invert_xaxis=True,
+    )
+
+    for i, txt in enumerate(values):
+        ax.annotate(
+            txt,
+            (labels[i], values[i]),
+            textcoords="offset points",
+            xytext=(0, 7),
+            ha="center",
+        )
+
+    for i, txt in enumerate(closed_values):
+        ax.annotate(
+            txt,
+            (closed_labels[i], closed_values[i]),
+            textcoords="offset points",
+            xytext=(0, 7),
+            ha="center",
+        )
 
     plt.plot(labels, values, label="Opened issues", linestyle="-", marker="o")
     plt.plot(
-        closed_labels, closed_values, label="Closed issues", linestyle="--",
-        marker="o"
+        closed_labels, closed_values, label="Closed issues", linestyle="--", marker="o"
     )
+
+    annotate_line(ax, labels, values)
+    annotate_line(ax, closed_labels, closed_values, offset=(0, -15))
 
     plt.legend()
 
     return plt
 
 
-def plot_backlog_grooming_line(df_issues, df_issues_closed):
-    backlog_grooming_df = df_issues[
-        df_issues["labels"].apply(lambda x: label_needs_backlog_grooming in x)
-    ].sort_values(by="created_at", ascending=False)
-    backlog_grooming_closed_df = df_issues_closed[
-        df_issues_closed["labels"].apply(
-            lambda x: label_needs_backlog_grooming in x)
-    ].sort_values(by="created_at", ascending=False)
+def plot_backlog_grooming_line(issues):
+    backlog_grooming_issues = [
+        issue for issue in issues if label_needs_backlog_grooming in issue["labels"]
+    ]
+
+    groomed_issues = []
+
+    for issue in issues:
+        if any(
+            label_needs_backlog_grooming == item["label"]
+            for item in issue.get("timelineItems", [])
+            if item["type"] == "LabeledEvent"
+        ):
+            backlog_grooming_issues.append(issue)
+
+        if any(
+            label_needs_backlog_grooming == item["label"]
+            for item in issue.get("timelineItems", [])
+            if item["type"] == "UnlabeledEvent"
+        ):
+            groomed_issues.append(issue)
+
+    backlog_grooming_df = pd.DataFrame(backlog_grooming_issues).sort_values(
+        by="createdAt", ascending=False
+    )
+
+    backlog_grooming_df["createdAt"] = pd.to_datetime(
+        backlog_grooming_df["createdAt"], yearfirst=True
+    )
+
+    groomed_df = pd.DataFrame(groomed_issues).sort_values(
+        by="createdAt", ascending=False
+    )
+
+    groomed_df["createdAt"] = pd.to_datetime(groomed_df["createdAt"], yearfirst=True)
 
     data = (
         backlog_grooming_df.groupby(
             [
-                backlog_grooming_df["created_at"].dt.year,
-                backlog_grooming_df["created_at"].dt.month_name(),
+                backlog_grooming_df["createdAt"].dt.year,
+                backlog_grooming_df["createdAt"].dt.month_name(),
             ],
             sort=False,
         )["labels"]
@@ -254,11 +340,11 @@ def plot_backlog_grooming_line(df_issues, df_issues_closed):
         .head(12)
     )
 
-    data_closed = (
-        backlog_grooming_closed_df.groupby(
+    data_groomed = (
+        groomed_df.groupby(
             [
-                backlog_grooming_closed_df["created_at"].dt.year,
-                backlog_grooming_closed_df["created_at"].dt.month_name(),
+                groomed_df["createdAt"].dt.year,
+                groomed_df["createdAt"].dt.month_name(),
             ],
             sort=False,
         )["labels"]
@@ -269,17 +355,49 @@ def plot_backlog_grooming_line(df_issues, df_issues_closed):
     values = list(data.values)
     labels = [f"{k[0]} {k[1]}" for k in list(data.index)]
 
-    closed_values = list(data_closed.values)
-    closed_labels = [f"{k[0]} {k[1]}" for k in list(data_closed.index)]
+    groomed_values = list(data_groomed.values)
+    groomed_labels = [f"{k[0]} {k[1]}" for k in list(data_groomed.index)]
 
-    _, ax = plt.subplots(figsize=(26, 9))
-    ax.set_title("Issues that required backlog grooming in the past 12 months")
+    # Prepare DataFrames for backlog grooming stats and save
+    df_backlog = pd.DataFrame({"Month": labels, "Added_for_Grooming": values})
+    df_groomed = pd.DataFrame({"Month": groomed_labels, "Groomed": groomed_values})
+    df_combined = pd.merge(df_backlog, df_groomed, on="Month", how="outer")
+    save_dataframe(df_combined, "stats-04")
+
+    ax = initialize_plot(
+        figsize=(26, 9),
+        title="Issues that required backlog grooming in the past 12 months",
+    )
     ax.invert_xaxis()
 
-    plt.plot(labels, values, label="Opened issues", linestyle="-", marker="o")
     plt.plot(
-        closed_labels, closed_values, label="Closed issues", linestyle="--",
-        marker="o"
+        labels,
+        values,
+        label="Added for grooming",
+        linestyle="-",
+        marker="o",
+        linewidth=2,
+    )
+    plt.plot(
+        groomed_labels,
+        groomed_values,
+        label="Groomed",
+        linestyle="--",
+        marker="o",
+        linewidth=2,
+    )
+
+    annotate_line(
+        ax,
+        labels,
+        values,
+        offset=(0, 10),
+    )
+    annotate_line(
+        ax,
+        groomed_labels,
+        groomed_values,
+        offset=(0, 10),
     )
 
     plt.legend()
@@ -287,34 +405,25 @@ def plot_backlog_grooming_line(df_issues, df_issues_closed):
     return plt
 
 
-def plot_closed_epics_line(df_issues, df_issues_closed, label_v9, label_epic):
-    released_components_df = df_issues_closed[
-        df_issues_closed["labels"].apply(
-            lambda x: label_v9 in x and label_epic in x)
-    ].sort_values(by="created_at", ascending=False)
+def plot_closed_epics_line(issues):
+    closed_epics = [
+        issue
+        for issue in issues
+        if issue["state"] == "CLOSED" and label_epic in issue["labels"]
+    ]
 
-    open_components_df = df_issues[
-        df_issues["labels"].apply(
-            lambda x: label_v9 in x and label_epic in x)
-    ].sort_values(by="created_at", ascending=False)
-
-    data = (
-        released_components_df.groupby(
-            [
-                released_components_df["created_at"].dt.year,
-                released_components_df["created_at"].dt.month_name(),
-            ],
-            sort=False,
-        )["labels"]
-        .count()
-        .head(12)
+    closed_epics_df = pd.DataFrame(closed_epics).sort_values(
+        by="closedAt", ascending=False
+    )
+    closed_epics_df["closedAt"] = pd.to_datetime(
+        closed_epics_df["closedAt"], yearfirst=True
     )
 
-    data_open = (
-        open_components_df.groupby(
+    data = (
+        closed_epics_df.groupby(
             [
-                open_components_df["created_at"].dt.year,
-                open_components_df["created_at"].dt.month_name(),
+                closed_epics_df["closedAt"].dt.year,
+                closed_epics_df["closedAt"].dt.month_name(),
             ],
             sort=False,
         )["labels"]
@@ -325,65 +434,14 @@ def plot_closed_epics_line(df_issues, df_issues_closed, label_v9, label_epic):
     values = list(data.values)
     labels = [f"{k[0]} {k[1]}" for k in list(data.index)]
 
-    open_values = list(data_open.values)
-    open_labels = [f"{k[0]} {k[1]}" for k in list(data_open.index)]
+    # Prepare DataFrame for closed epics and save
+    df_closed_epics = pd.DataFrame({"Month": labels, "Closed_Epics": values})
+    save_dataframe(df_closed_epics, "stats-05")
 
-    _, ax = plt.subplots(figsize=(26, 9))
-    ax.set_title("Closed epics (components / large items)")
-    ax.invert_xaxis()
-
-    plt.plot(labels, values, linestyle="-", marker="o")
-    plt.plot(open_labels, open_values, linestyle="--", marker="o")
-
-    return plt
-
-
-def plot_triage_issues_line(df_issues):
-    created_issues = df_issues.sort_values(by="created_at", ascending=False)
-    created_issues["created_at"] = pd.to_datetime(
-        created_issues["created_at"] - pd.to_timedelta(1, unit="w"))
-
-    triage_df = df_issues[
-        df_issues["labels"].apply(lambda x: label_needs_triage in x)
-    ].sort_values(by="created_at", ascending=False)
-
-    triage_df["created_at"] = pd.to_datetime(
-        triage_df["created_at"] - pd.to_timedelta(1, unit="w"))
-
-    data_created = (
-        created_issues.groupby(
-            [
-                created_issues["created_at"].dt.year,
-                created_issues["created_at"].dt.month_name(),
-                pd.Grouper(key="created_at", freq="W-MON"),
-            ],
-        )["labels"]
-        .count()
-        .sort_index(ascending=False)
-        .head(12)
+    ax = initialize_plot(
+        figsize=(26, 9),
+        title="Closed Epics in the past 12 months",
     )
-
-    data = (
-        triage_df.groupby(
-            [
-                triage_df["created_at"].dt.year,
-                triage_df["created_at"].dt.month_name(),
-                pd.Grouper(key="created_at", freq="W-MON"),
-            ],
-        )["labels"]
-        .count()
-        .sort_index(ascending=False)
-    )
-
-    created_values = list(data_created.values)
-    created_labels = [k[2].strftime("%Y-%m-%d")
-                      for k in list(data_created.index)]
-
-    values = list(data.values)
-    labels = [k[2].strftime("%Y-%m-%d") for k in list(data.index)]
-
-    _, ax = plt.subplots(figsize=(26, 9))
-    ax.set_title("Issues were created and issues that need triage")
     ax.invert_xaxis()
 
     for i, txt in enumerate(values):
@@ -395,101 +453,176 @@ def plot_triage_issues_line(df_issues):
             ha="center",
         )
 
-    for i, txt in enumerate(created_values):
-        ax.annotate(
-            txt,
-            (created_labels[i], created_values[i]),
-            textcoords="offset points",
-            xytext=(0, 7),
-            ha="center",
-        )
+    plt.plot(labels, values, label="Closed Epics", linestyle="-", marker="o")
 
-    plt.plot(labels, values, label="Issues needing triage",
-             linestyle="-", marker="o")
-    plt.plot(created_labels, created_values,
-             label="Created issues", linestyle="--", marker="o")
+    annotate_line(ax, labels, values)
 
-    plt.xticks(rotation=45)
     plt.legend()
 
     return plt
 
 
-def _generate_and_save_plots(issues):
-    _, issues_minimal, df_issues, df_issues_closed, issue_labels, component_names = get_charts_data(
-        issues)
+def plot_triage_issues_line(issues):
+    from datetime import datetime, timedelta
 
-    with alive_bar(7, title="Generating and saving charts", unit=" charts") as bar:
-        plt = plot_labels_pie(issue_labels)
+    # Collect dates when issues required triage (label added)
+    triage_needed_dates = []
+    for issue in issues:
+        for event in issue.get("timelineItems", []):
+            if event["type"] == "LabeledEvent" and event["label"] == label_needs_triage:
+                triage_needed_dates.append(event["createdAt"])
+                break  # Only consider the first time it was labeled
+
+    # Collect dates when issues were triaged (label removed)
+    triaged_dates = []
+    for issue in issues:
+        for event in issue.get("timelineItems", []):
+            if (
+                event["type"] == "UnlabeledEvent"
+                and event["label"] == label_needs_triage
+            ):
+                triaged_dates.append(event["createdAt"])
+                break  # Only consider the first time it was unlabeled
+
+    # Convert to DataFrames and parse dates
+    df_triage_needed = pd.DataFrame({"date": triage_needed_dates})
+    df_triage_needed["date"] = pd.to_datetime(df_triage_needed["date"], yearfirst=True)
+    df_triage_needed = df_triage_needed.sort_values(by="date")
+
+    df_triaged = pd.DataFrame({"date": triaged_dates})
+    df_triaged["date"] = pd.to_datetime(df_triaged["date"], yearfirst=True)
+    df_triaged = df_triaged.sort_values(by="date")
+
+    # Calculate the cutoff date for 12 weeks ago
+    cutoff_date = datetime.now() - timedelta(weeks=12)
+
+    # Filter the DataFrames to include only the past 12 weeks
+    df_triage_needed = df_triage_needed[df_triage_needed["date"] >= cutoff_date]
+    df_triaged = df_triaged[df_triaged["date"] >= cutoff_date]
+
+    # Group by week starting on Monday
+    data_needed = (
+        df_triage_needed.groupby(pd.Grouper(key="date", freq="W-MON"))["date"]
+        .size()
+        .reset_index(name="count")
+    )
+
+    data_triaged = (
+        df_triaged.groupby(pd.Grouper(key="date", freq="W-MON"))["date"]
+        .size()
+        .reset_index(name="count")
+    )
+
+    # Prepare data for plotting
+    labels_needed = data_needed["date"].dt.strftime("%Y-%m-%d").tolist()
+    values_needed = data_needed["count"].tolist()
+
+    labels_triaged = data_triaged["date"].dt.strftime("%Y-%m-%d").tolist()
+    values_triaged = data_triaged["count"].tolist()
+
+    # Prepare DataFrames for triage stats and save
+    df_triage_needed = pd.DataFrame(
+        {"Week": labels_needed, "Issues_Needing_Triage": values_needed}
+    )
+    df_triaged = pd.DataFrame(
+        {"Week": labels_triaged, "Issues_Triaged": values_triaged}
+    )
+    df_combined = pd.merge(df_triage_needed, df_triaged, on="Week", how="outer")
+    save_dataframe(df_combined, "stats-06")
+
+    ax = initialize_plot(
+        figsize=(26, 9),
+        title="Issues Needing Triage vs Issues Triaged Per Week",
+    )
+
+    plt.plot(
+        labels_needed,
+        values_needed,
+        label="Issues Needing Triage",
+        linestyle="--",
+        marker="o",
+        color="orange",
+    )
+    plt.plot(
+        labels_triaged,
+        values_triaged,
+        label="Issues Triaged",
+        linestyle="-",
+        marker="o",
+    )
+
+    annotate_line(ax, labels_needed, values_needed)
+    annotate_line(ax, labels_triaged, values_triaged, offset=(0, -15))
+
+    # Annotate data points
+    for i, txt in enumerate(values_needed):
+        ax.annotate(
+            txt,
+            (labels_needed[i], values_needed[i]),
+            textcoords="offset points",
+            xytext=(0, 7),
+            ha="center",
+        )
+
+    for i, txt in enumerate(values_triaged):
+        ax.annotate(
+            txt,
+            (labels_triaged[i], values_triaged[i]),
+            textcoords="offset points",
+            xytext=(0, -15),
+            ha="center",
+        )
+
+    plt.xticks(rotation=45)
+    plt.legend()
+    plt.tight_layout()
+
+    return plt
+
+
+def _generate_and_save_plots(issues):
+    with alive_bar(6, title="Generating and saving charts", unit=" charts") as bar:
+        plt = plot_labels_pie(issues)
         plt.tight_layout()
         plt.savefig("images/stats-01.png")
 
         bar()
 
-        plt = plot_components_issue_bar(issue_labels)
+        plt = plot_components_issue_bar(issues)
         plt.tight_layout()
         plt.savefig("images/stats-02.png")
 
         bar()
 
-        plt = plot_issues_in_the_past_12_months_line(
-            df_issues, df_issues_closed)
+        plt = plot_issues_in_the_past_12_months_line(issues)
         plt.tight_layout()
         plt.savefig("images/stats-03.png")
 
         bar()
 
-        plt = plot_backlog_grooming_line(df_issues, df_issues_closed)
+        plt = plot_backlog_grooming_line(issues)
         plt.tight_layout()
         plt.savefig("images/stats-04.png")
 
         bar()
 
-        plt = plot_closed_epics_line(df_issues, df_issues_closed, label_v9, label_epic)
+        plt = plot_closed_epics_line(issues)
         plt.tight_layout()
         plt.savefig("images/stats-05.png")
 
         bar()
 
-        plt = plot_triage_issues_line(df_issues)
+        plt = plot_triage_issues_line(issues)
         plt.tight_layout()
         plt.savefig("images/stats-06.png")
         bar()
 
-        plt = plot_issues_in_the_past_12_months_line(
-            df_issues, df_issues_closed, label_a11y)
-        plt.tight_layout()
-        plt.savefig("images/stats-07.png")
-
-        bar()
-
-def _generate_and_save_sheets(issues):
-    _, _issues_minimal, df_issues, df_issues_closed, _issue_labels, component_names = get_charts_data(
-        issues)
-
-    with alive_bar(3, title="Generating and saving spreadsheets", unit=" sheets") as bar:
-        overall_issue_stats(df_issues, label_bug, label_feature, label_epic)
-        bar()
-
-        monthly_stats(df_issues, df_issues_closed)
-        bar()
-
-        component_stats(component_names, df_issues, label_bug, label_feature, label_epic)
-        bar()
 
 def main():
-    repo = "microsoft/fluentui"
-    token = os.environ["GITHUB_TOKEN"]
-    data_folder = f"data/{sys.argv[1]}"
-    Path(data_folder).mkdir(parents=True, exist_ok=True)
+    issues = get_issues(True)
+    normalized_issues = normalize_issues(issues)
 
-    issues = fetch_issues(repo, token)
-
-    with open(f"{data_folder}/issues.json", "w") as f:
-        json.dump(issues, f)
-
-    _generate_and_save_plots(issues)
-    _generate_and_save_sheets(issues)
+    _generate_and_save_plots(normalized_issues)
 
 
 if __name__ == "__main__":

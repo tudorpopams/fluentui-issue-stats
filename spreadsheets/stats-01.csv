@@ -1,0 +1,11 @@
+Label,Count
+Type: Feature,67
+Type: Bug :bug:,45
+Area: Build System,25
+Area: Accessibility,17
+Area: Documentation,13
+Resolution: Soft Close,13
+Component: DataGrid,12
+Component: Menu,12
+Needs: PM,11
+Component: Nav,10
